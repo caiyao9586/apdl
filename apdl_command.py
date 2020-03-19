@@ -1,6 +1,8 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 import datetime
 import os
-'''Éú³ÉapdlÃüÁîÁ÷ÎÄ¼ş'''
+# ç”Ÿæˆapdlå‘½ä»¤æµæ–‡ä»¶
 
 
 def time_now():
@@ -8,29 +10,37 @@ def time_now():
     return time
 
 
-def command_genertate(work_dir, text):
+def command_genertate(work_dir, text, soft_name):
     """
-    :param work_dir: ¹¤×÷Ä¿Â¼
-    :param text: ÃüÁîÁ÷str
-    :return: ÃüÁîÁ÷ÎÄ¼şÃû
+    :param soft_name:
+    :param work_dir: å·¥ä½œç›®å½•
+    :param text: å‘½ä»¤æµstr
+    :return: å‘½ä»¤æµæ–‡ä»¶å
     """
     time = time_now()
+    suffix = {
+        'ansys': '.inp',
+        'fluent': '.jou',
+    }
     file_path = os.path.join(work_dir,
-                             'model'+time+'.inp')
+                             '{}'.format(soft_name) + time +
+                             '{}'.format(suffix[f'{soft_name}']))
     with open(file_path, 'a') as f:
         f.write(text)
     file_name = os.path.split(file_path)[-1]
     return file_name
 
 
-def command_stream(film_thick=0.005):
+def command_stream(ansys_dir, fluent_dir, film_thick=0.005, **kwargs):
     """
-    :param film_thick: Ä¤ºñ
-    :return: ÃüÁîÁ÷str
+    :param ansys_dir:
+    :param fluent_dir:
+    :param film_thick: è†œåš
+    :return: å‘½ä»¤æµstr
     """
     time = time_now()
     cdb_name = str(film_thick*1000)+'um'+time
-    text = f'''\
+    inp = f'''\
 /clear
 /filname,seal_groove
 
@@ -395,14 +405,46 @@ cm,outwall2,node
 allsel
 CDWRITE,DB,'{cdb_name}','cdb'        
 '''
-    return text
+    jou = f'''\
+/file/import/mechanical-apdl/input "{os.path.join(ansys_dir, cdb_name)}"
+/mesh/scale 0.001 0.001 0.001
+/define/units angular-velocity rpm 
+/define/boundary-conditions/wall mwall y motion-bc-moving no no y no {kwargs['rpm']} 0 0 0 0 1 0 
+/define/boundary-conditions/zone-type inlet pressure-inlet 
+/define/boundary-conditions/zone-type outlet pressure-outlet 
+/define/boundary-conditions/pressure-inlet inlet yes no {kwargs['inlet']} no 0 no yes 
+/define/boundary-conditions/pressure-outlet outlet no {kwargs['outlet']} no yes no no no
+/define/operating-conditions/operating-pressure 0
+/solve/monitors/residual/convergence-criteria 1e-5 1e-5 1e-5 1e-5
+/solve/monitors/surface/set-monitor surf-mon-1 "Mass Flow Rate" outlet () n 2 n y "{os.path.join(
+        fluent_dir, 'massflow'+time+'.out'
+    )}" 
+/solve/monitors/surface/set-monitor surf-mon-2 "Area-Weighted Average" pressure outwall2 () n 3 n y "{os.path.join(
+        fluent_dir, 'pressure'+time+'.out'
+    )}" 
+/solve/initialize/hyb-initialization
+/solve/set/number-of-iterations 4000 
+/solve/iterate 4000 
+/file/write-case-data "{os.path.join(
+        fluent_dir, str(film_thick*1000)+'um'+time+'.cas'
+    )}"
+/exit
+'''
+    return inp, jou
 
 
 def main():
-    work_dir = r'D:\Python\Circle_Seal\ansys_workdir'
-    text = command_stream()
-    file_name = command_genertate(work_dir, text)
-    return file_name
+    ansys_dir = r'.\log\ansys'
+    fluent_dir = r'.\log\fluent'
+    kw = {
+        'rpm': 20000,
+        'inlet': 200000,
+        'outlet': 100000,
+    }
+    text = command_stream(ansys_dir, fluent_dir, **kw)
+    ansys_name = command_genertate(ansys_dir, text[0], 'ansys')
+    fluent_name = command_genertate(fluent_dir, text[1], 'fluent')
+    return ansys_name, fluent_name
 
 
 if __name__ == '__main__':

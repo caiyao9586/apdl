@@ -4,6 +4,18 @@ import datetime
 import os
 
 
-with open('a.txt', 'r') as f:
-    for line in f:
-        print(line, end='')
+kw = {
+    'a': 1,
+    'b': 2,
+}
+
+
+def a(x=1, **kwargs):
+
+    return kwargs['a'], kwargs['b']
+
+
+print(a(**kw))
+
+
+
