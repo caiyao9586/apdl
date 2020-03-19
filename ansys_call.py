@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 import subprocess
 import os
-from apdl_command import main as apm, time_now
+from inp_jou import main as apm, time_now
 
 
 def error_find(content):
