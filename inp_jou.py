@@ -16,13 +16,12 @@ def command_genertate(work_dir, content, soft_name):
     :param content: 命令流str
     :return: 生成命令流文件，返回文件名
     """
-    global time
     suffix = {
         'ansys': '.inp',
         'fluent': '.jou',
     }
     file_path = os.path.join(work_dir,
-                             '{}'.format(soft_name) + time +
+                             '{}'.format(soft_name) +
                              '{}'.format(suffix[f'{soft_name}']))
     with open(file_path, 'w') as f:
         f.write(content)
@@ -37,8 +36,7 @@ def command_stream(ansys_dir, fluent_dir, film_thick='0.005', **kwargs):
     :param film_thick: 膜厚
     :return: 命令流str
     """
-    global time
-    cdb_name = str(float(film_thick)*1000)+'um'+time
+    cdb_name = str(float(film_thick)*1000)+'um'
     inp = f'''\
 /clear
 /filname,seal_groove
@@ -405,25 +403,25 @@ allsel
 CDWRITE,DB,'{cdb_name}','cdb'        
 '''
     jou = f'''\
-/file/import/mechanical-apdl/input "{os.path.join(ansys_dir, cdb_name)}"
+/file/import/mechanical-apdl/input "{os.path.join(ansys_dir, cdb_name+'.cdb')}"
 /mesh/scale 0.001 0.001 0.001
 /define/units angular-velocity rpm 
-/define/boundary-conditions/wall mwall y motion-bc-moving no no y no {kwargs['rpm']} 0 0 0 0 1 0 
+/define/boundary-conditions/wall mwall y motion-bc-moving no no y no {kwargs['rpm']} 0 0 0 0 0 1 
 /define/boundary-conditions/zone-type inlet pressure-inlet 
 /define/boundary-conditions/zone-type outlet pressure-outlet 
 /define/boundary-conditions/pressure-inlet inlet yes no {kwargs['inlet']} no 0 no yes 
 /define/boundary-conditions/pressure-outlet outlet no {kwargs['outlet']} no yes no no no
 /define/operating-conditions/operating-pressure 0
 /solve/monitors/residual/convergence-criteria 1e-5 1e-5 1e-5 1e-5
-/solve/monitors/surface/set-monitor surf-mon-1 "Mass Flow Rate" outlet () n 2 n y "{os.path.join(
-        fluent_dir, 'massflow'+time+'.out'
-    )}" 
-/solve/monitors/surface/set-monitor surf-mon-2 "Area-Weighted Average" pressure outwall2 () n 3 n y "{os.path.join(
-        fluent_dir, 'pressure'+time+'.out'
-    )}" 
+/solve/monitors/surface/set-monitor surf-mon-1 "Mass Flow Rate" outlet () n n y "{os.path.join(
+        fluent_dir, 'massflow.out'
+    )}" 1
+/solve/monitors/surface/set-monitor surf-mon-2 "Area-Weighted Average" pressure outwall2 () n n y "{os.path.join(
+        fluent_dir, 'pressure.out'
+    )}" 1
 /solve/initialize/hyb-initialization
-/solve/set/number-of-iterations 4000 
-/solve/iterate 4000 
+/solve/set/number-of-iterations {kwargs['iterate']}
+/solve/iterate {kwargs['iterate']} 
 /file/write-case-data "{os.path.join(
         fluent_dir, cdb_name+'.cas'
     )}"
@@ -462,10 +460,9 @@ def ansys_call(ansys_path, work_dir, inp_path):
     :param work_dir:
     :return: 是否生成cdb文件True/False
     """
-    global time
     input_file = inp_path
     output_file = os.path.join(work_dir,
-                               'output'+time+'.out')
+                               'output_ansys.out')
 
     job_name = 'seal'
     path_string = ('"{}"  -p ane3fl -dir "{}" -j "{}" -s read -l en-us '
@@ -480,20 +477,34 @@ def ansys_call(ansys_path, work_dir, inp_path):
     return ansys_create_cdb
 
 
+def fluent_call(fluent_path, work_dir, jou_path):
+    input_file = jou_path
+    output_file = os.path.join(work_dir,
+                               'output_fluent.out')
+    path_string = '"{}" 3ddp -t3 -g -i "{}" -o "{}"'.format(
+        fluent_path, input_file, output_file
+    )
+    subprocess.call(path_string)
+    return None
+
+
 def main():
     ansys_path = r'C:\Program Files\ANSYS Inc\v160\ANSYS\bin\winx64\ansys160.exe'
-    ansys_dir = make_work_dir('ansys')
-    fluent_dir = make_work_dir('fluent')
+    fluent_path = r'C:\Program Files\ANSYS Inc\v160\fluent\ntbin\win64\fluent.exe'
     kw = {
-        'rpm': 20000,
+        'rpm': -20000,
         'inlet': 200000,
         'outlet': 100000,
+        'iterate': 4000,
     }
+    ansys_dir = make_work_dir('ansys')
+    fluent_dir = make_work_dir('fluent')
     content = command_stream(ansys_dir, fluent_dir, **kw)
     inp_path = command_genertate(ansys_dir, content[0], 'ansys')
     jou_path = command_genertate(fluent_dir, content[1], 'fluent')
     cdb_ok = ansys_call(ansys_path, ansys_dir, inp_path)
-    return cdb_ok
+    if cdb_ok:
+        fluent_call(fluent_path, fluent_dir, jou_path)
 
 
 if __name__ == '__main__':
