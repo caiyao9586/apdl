@@ -2,22 +2,21 @@
 # -*- coding: utf-8 -*-
 import datetime
 import os
+import subprocess
 # 生成apdl命令流文件
 
 
-def time_now():
-    time = datetime.datetime.now().strftime('%Y%m%d%H%M')
-    return time
+time = datetime.datetime.now().strftime('%Y%m%d%H%M')
 
 
-def command_genertate(work_dir, text, soft_name):
+def command_genertate(work_dir, content, soft_name):
     """
-    :param soft_name:
+    :param soft_name: ansys or fluent
     :param work_dir: 工作目录
-    :param text: 命令流str
-    :return: 命令流文件名
+    :param content: 命令流str
+    :return: 生成命令流文件，返回文件名
     """
-    time = time_now()
+    global time
     suffix = {
         'ansys': '.inp',
         'fluent': '.jou',
@@ -25,21 +24,21 @@ def command_genertate(work_dir, text, soft_name):
     file_path = os.path.join(work_dir,
                              '{}'.format(soft_name) + time +
                              '{}'.format(suffix[f'{soft_name}']))
-    with open(file_path, 'a') as f:
-        f.write(text)
-    file_name = os.path.split(file_path)[-1]
-    return file_name
+    with open(file_path, 'w') as f:
+        f.write(content)
+#    file_name = os.path.split(file_path)[-1]
+    return file_path
 
 
-def command_stream(ansys_dir, fluent_dir, film_thick=0.005, **kwargs):
+def command_stream(ansys_dir, fluent_dir, film_thick='0.005', **kwargs):
     """
     :param ansys_dir:
     :param fluent_dir:
     :param film_thick: 膜厚
     :return: 命令流str
     """
-    time = time_now()
-    cdb_name = str(film_thick*1000)+'um'+time
+    global time
+    cdb_name = str(float(film_thick)*1000)+'um'+time
     inp = f'''\
 /clear
 /filname,seal_groove
@@ -426,25 +425,75 @@ CDWRITE,DB,'{cdb_name}','cdb'
 /solve/set/number-of-iterations 4000 
 /solve/iterate 4000 
 /file/write-case-data "{os.path.join(
-        fluent_dir, str(film_thick*1000)+'um'+time+'.cas'
+        fluent_dir, cdb_name+'.cas'
     )}"
 /exit
 '''
     return inp, jou
 
 
+def make_work_dir(name):
+    """
+    :param name: ansys or fluent
+    :return: 判断文件夹是否存在，不存在则创建
+    """
+    path = r'.\log\{0}\{1}'.format(name, name+time)
+    if not os.path.exists(path):
+        os.mkdir(path)
+    return path
+
+
+def error_find(output_file):
+    """
+    :param output_file: ansys output 文件
+    :return: 建模过程中是否不正常退出，error数量
+    """
+    with open(output_file, 'r') as f:
+        for line in f:
+            if 'NUMBER OF ERROR' in line:
+                error_num = int(line.split()[-1])
+                return error_num
+
+
+def ansys_call(ansys_path, work_dir, inp_path):
+    """
+    :param inp_path:
+    :param ansys_path:
+    :param work_dir:
+    :return: 是否生成cdb文件True/False
+    """
+    global time
+    input_file = inp_path
+    output_file = os.path.join(work_dir,
+                               'output'+time+'.out')
+
+    job_name = 'seal'
+    path_string = ('"{}"  -p ane3fl -dir "{}" -j "{}" -s read -l en-us '
+                   '-b -i "{}" -o "{}"').format(
+        ansys_path, work_dir, job_name, input_file, output_file
+    )
+
+    subprocess.call(path_string)
+    ansys_create_cdb = True
+    if error_find(output_file):
+        ansys_create_cdb = False
+    return ansys_create_cdb
+
+
 def main():
-    ansys_dir = r'.\log\ansys'
-    fluent_dir = r'.\log\fluent'
+    ansys_path = r'C:\Program Files\ANSYS Inc\v160\ANSYS\bin\winx64\ansys160.exe'
+    ansys_dir = make_work_dir('ansys')
+    fluent_dir = make_work_dir('fluent')
     kw = {
         'rpm': 20000,
         'inlet': 200000,
         'outlet': 100000,
     }
-    text = command_stream(ansys_dir, fluent_dir, **kw)
-    ansys_name = command_genertate(ansys_dir, text[0], 'ansys')
-    fluent_name = command_genertate(fluent_dir, text[1], 'fluent')
-    return ansys_name, fluent_name
+    content = command_stream(ansys_dir, fluent_dir, **kw)
+    inp_path = command_genertate(ansys_dir, content[0], 'ansys')
+    jou_path = command_genertate(fluent_dir, content[1], 'fluent')
+    cdb_ok = ansys_call(ansys_path, ansys_dir, inp_path)
+    return cdb_ok
 
 
 if __name__ == '__main__':
